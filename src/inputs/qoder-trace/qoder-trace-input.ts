@@ -21,6 +21,8 @@ import { clearAttachedImagePathsCache, enrichIdeMultimodal } from './qoder-ide-m
 
 export interface QoderTraceInputOptions extends InputOptions {
   logDir?: string;
+  /** Non-canonical record keys retained for OTLP span attribute passthrough. */
+  spanAttributePassthroughPrefixes?: readonly string[];
   /** Cached multimodal policy; IDE + CLI extraction when enabled. */
   multimodal?: {
     enabled: boolean;
@@ -89,11 +91,13 @@ export class QoderTraceInput extends BaseInput {
   private readonly multimodalUploadMode: MultimodalUploadMode;
   private readonly multimodalProcessor: MultimodalProcessor | null;
   private readonly allowedRootPaths: string[];
+  private readonly spanAttributePassthroughPrefixes: readonly string[];
   private multimodalStopped = false;
 
   constructor(opts: QoderTraceInputOptions) {
     super({ ...opts, pollIntervalMs: opts.pollIntervalMs ?? 30_000 });
     this.logDir = opts.logDir ?? resolveHome('~/.loongsuite-pilot/logs/qoder/history');
+    this.spanAttributePassthroughPrefixes = opts.spanAttributePassthroughPrefixes ?? [];
     this.multimodalEnabled = opts.multimodal?.enabled === true && !!opts.multimodal.processor;
     this.multimodalUploadMode = opts.multimodal?.uploadMode ?? 'none';
     this.multimodalProcessor = opts.multimodal?.processor ?? null;
@@ -282,7 +286,12 @@ export class QoderTraceInput extends BaseInput {
   // ─── Record transformation (canonical passthrough) ──────────────────────────
 
   private async transformRecord(record: Record<string, unknown>): Promise<AgentActivityEntry | null> {
-    const canonicalEntry = buildCanonicalHookEntry(record, ClientType.QoderCli);
+    const canonicalEntry = buildCanonicalHookEntry(
+      record,
+      ClientType.QoderCli,
+      undefined,
+      this.spanAttributePassthroughPrefixes,
+    );
     if (canonicalEntry) {
       await enrichCanonicalEntryWithGit(canonicalEntry, record, 'qoder');
       return canonicalEntry;

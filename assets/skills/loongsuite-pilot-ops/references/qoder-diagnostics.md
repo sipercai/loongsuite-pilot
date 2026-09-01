@@ -162,7 +162,7 @@ grep -h '"type":"model.response.completed"' \
 CLI Token 的最高优先级数据源，通过 `intercept.id == gen_ai.response.id` 精确关联；
 仅在 intercept 不可用时才回退到旧版 segment 的非零 token。
 
-`qodercli-runtime-wrapper.sh` 会按发行形态选择注入方式：npm/Node 入口使用
+`qodercli-runtime-wrapper.sh` 会按发行形态选择注入方式：npm/Node 入口（包括无 shebang 的 SDK bundled `.mjs`）使用
 `NODE_OPTIONS --import`，原生 Bun 可执行文件使用 `BUN_OPTIONS --preload`。缺失时表现为
 **Chat / Tool call 有数据，但 token 或 system prompt 缺失 / 全 0**。
 

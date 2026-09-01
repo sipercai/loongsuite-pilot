@@ -20,18 +20,29 @@ if [ -z "$QODERCLI_BIN" ]; then
   exit 127
 fi
 
-# Missing hook assets must never prevent qodercli from starting.
-if [ ! -f "$INTERCEPT_SCRIPT" ]; then
-  exec "$QODERCLI_BIN" "$@"
-fi
-
 QODERCLI_RUNTIME="${LOONGSUITE_QODERCLI_RUNTIME:-}"
 if [ -z "$QODERCLI_RUNTIME" ]; then
-  if LC_ALL=C head -c 128 "$QODERCLI_BIN" 2>/dev/null | grep -aq '^#!.*node'; then
+  case "$QODERCLI_BIN" in
+    *.js|*.cjs|*.mjs) QODERCLI_RUNTIME=node ;;
+  esac
+  if [ -z "$QODERCLI_RUNTIME" ] \
+    && LC_ALL=C head -c 128 "$QODERCLI_BIN" 2>/dev/null | grep -aq '^#!.*node'; then
     QODERCLI_RUNTIME=node
-  else
+  elif [ -z "$QODERCLI_RUNTIME" ]; then
     QODERCLI_RUNTIME=bun
   fi
+fi
+
+launch_qodercli() {
+  if [ "$QODERCLI_RUNTIME" = "node" ]; then
+    exec "${LOONGSUITE_QODERCLI_NODE:-node}" "$QODERCLI_BIN" "$@"
+  fi
+  exec "$QODERCLI_BIN" "$@"
+}
+
+# Missing hook assets must never prevent qodercli from starting.
+if [ ! -f "$INTERCEPT_SCRIPT" ]; then
+  launch_qodercli "$@"
 fi
 
 if [ "$QODERCLI_RUNTIME" = "node" ]; then
@@ -50,4 +61,4 @@ else
   export BUN_OPTIONS
 fi
 
-exec "$QODERCLI_BIN" "$@"
+launch_qodercli "$@"

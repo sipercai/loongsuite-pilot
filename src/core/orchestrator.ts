@@ -1218,6 +1218,8 @@ export class Orchestrator extends EventEmitter {
     const qoderTraceInput = new QoderTraceInput({
       stateStore: this.stateStore,
       logDir: qoderCliLogDir,
+      spanAttributePassthroughPrefixes:
+        this.config.otlpTrace?.spanAttributePassthroughPrefixes ?? [],
       multimodal: {
         enabled: qoderMultimodalEnabled,
         uploadMode: qoderAgentCfg.multimodal?.uploadMode ?? 'none',

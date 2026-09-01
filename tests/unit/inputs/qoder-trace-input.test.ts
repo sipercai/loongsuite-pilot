@@ -1941,4 +1941,38 @@ describe('QoderTraceInput bootstrap history filtering', () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it('retains configured AgentCore attributes from Qoder hook records', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'qoder-trace-agentcore-'));
+    try {
+      const logFileName = `qoder-${getTodayDateString()}.jsonl`;
+      await fs.writeFile(path.join(tmpDir, logFileName), JSON.stringify({
+        'event.id': 'agentcore-event',
+        'event.name': 'llm.response',
+        'gen_ai.agent.type': 'qoder-cli',
+        'gen_ai.session.id': 'session-agentcore',
+        'gen_ai.turn.id': 'turn-agentcore',
+        'agentcore.task_id': 'task-123',
+        'private.secret': 'drop-me',
+        time_unix_nano: '1780000000000000000',
+      }) + '\n');
+      const stateStore = new MockStateStore();
+      stateStore.set('qoder-trace', {
+        lastFile: logFileName,
+        lastOffset: 0,
+        extra: { hookHistoryInitialized: true },
+      });
+      const input = new QoderTraceInput({
+        stateStore: stateStore as any,
+        logDir: tmpDir,
+        spanAttributePassthroughPrefixes: ['agentcore.'],
+      });
+
+      const entries = await (input as any).collect() as AgentActivityEntry[];
+      expect(entries[0]?.['agentcore.task_id']).toBe('task-123');
+      expect(entries[0]).not.toHaveProperty('private.secret');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

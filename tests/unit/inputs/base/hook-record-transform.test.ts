@@ -44,4 +44,20 @@ describe('hook record resource attribute passthrough', () => {
       },
     });
   });
+
+  it('preserves only explicitly configured non-canonical prefixes', () => {
+    const entry = buildCanonicalHookEntry({
+      'event.id': 'event-3',
+      'event.name': 'llm.response',
+      'gen_ai.session.id': 'session-3',
+      'gen_ai.agent.type': 'qoder-cli',
+      'agentcore.task_id': 'task-123',
+      'private.secret': 'must-not-pass',
+    }, ClientType.QoderCli, undefined, ['agentcore.']);
+
+    expect(entry).toMatchObject({
+      'agentcore.task_id': 'task-123',
+    });
+    expect(entry).not.toHaveProperty('private.secret');
+  });
 });

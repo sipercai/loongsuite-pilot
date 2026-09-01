@@ -28,12 +28,13 @@ export function buildCanonicalHookEntry(
   record: Record<string, unknown>,
   fallbackAgentType: string,
   attributes?: Record<string, unknown>,
+  passthroughPrefixes: readonly string[] = [],
 ): AgentActivityEntry | null {
   if (!isCanonicalHookRecord(record)) return null;
 
   const opts: Record<string, JsonValue | undefined> = {};
   for (const [key, raw] of Object.entries(record)) {
-    if (!isCanonicalKey(key)) continue;
+    if (!isCanonicalKey(key, passthroughPrefixes)) continue;
     const value = toJsonValue(raw);
     if (value !== undefined) opts[key] = value;
   }
@@ -58,8 +59,10 @@ function isCanonicalHookRecord(record: Record<string, unknown>): boolean {
     && typeof record['gen_ai.agent.type'] === 'string';
 }
 
-function isCanonicalKey(key: string): boolean {
-  return CANONICAL_KEYS.has(key) || CANONICAL_PREFIXES.some(prefix => key.startsWith(prefix));
+function isCanonicalKey(key: string, passthroughPrefixes: readonly string[]): boolean {
+  return CANONICAL_KEYS.has(key)
+    || CANONICAL_PREFIXES.some(prefix => key.startsWith(prefix))
+    || passthroughPrefixes.some(prefix => prefix.length > 0 && key.startsWith(prefix));
 }
 
 function stringValue(data: Record<string, unknown>, key: string): string | undefined {
