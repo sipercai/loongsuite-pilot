@@ -235,6 +235,32 @@ describe('qoder-hook-processor turn boundary markers', () => {
     }
   });
 
+  it('uses the transcript user UUID to apply per-invocation attributes over stale process attributes', () => {
+    const invocationUuid = '8db9c076-fdad-4ee7-8fe3-39fa15cf1fe0';
+    writeTranscript(ideTurnRows({ uuid: invocationUuid }));
+    const contextDir = path.join(dataDir, 'state', 'invocation-contexts', 'qoder-cn');
+    fs.mkdirSync(contextDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(contextDir, `${invocationUuid}.json`), JSON.stringify({
+      version: 1,
+      agent_id: 'qoder-cn',
+      message_uuid: invocationUuid,
+      span_attributes: {
+        'agentcore.task_id': 'task-current',
+        'agentcore.subtask_id': 'subtask-current',
+      },
+      created_at: new Date(Date.now() - 1_000).toISOString(),
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }));
+
+    expect(runProcessor('qoder-cn', {
+      LOONGSUITE_PILOT_SPAN_ATTRIBUTES: 'agentcore.task_id=task-stale',
+    }).status).toBe(0);
+    const records = readHistory('qoder-cn');
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every(record => record['agentcore.task_id'] === 'task-current')).toBe(true);
+    expect(records.every(record => record['agentcore.subtask_id'] === 'subtask-current')).toBe(true);
+  });
+
   it('leaves qoder-cli turns unmarked', () => {
     writeTranscript(ideTurnRows({ entrypoint: 'cli' }));
 
