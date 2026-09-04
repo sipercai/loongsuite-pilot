@@ -33,6 +33,11 @@ async function main(): Promise<void> {
     process.exitCode = await runTokenUsageCommand(args);
     return;
   }
+  if (command === 'invocation-context') {
+    const { runInvocationContextCommand } = await import('./cli/invocation-context.js');
+    process.exitCode = await runInvocationContextCommand(args);
+    return;
+  }
 
   // One-shot deployment. The collector deploys hooks/plugins itself on startup,
   // but only as a daemon side effect; image builds need it as a foreground step

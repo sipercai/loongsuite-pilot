@@ -34,6 +34,7 @@ import {
   collectResourceAttributesFromEnv,
   parseSpanAttributesFromEnv,
 } from './shared/resource-context.mjs';
+import { readInvocationSpanAttributes } from './shared/invocation-context.mjs';
 import { recordUpstreamContextOnce } from './shared/upstream-context.mjs';
 
 const RESOURCE_ATTRIBUTES = collectResourceAttributesFromEnv(process.env, { agentId: 'qoder' });
@@ -1042,6 +1043,10 @@ export function buildEventsFromBoundaries(boundaries, contentEvents, allParsed, 
   const userId = resolveUserId(userRow || contentEvents[0], runtimeConfig);
   const agentType = inferVariant(userRow || contentEvents[0], agentId);
   const providerName = inferProviderName({ 'gen_ai.agent.type': agentType });
+  const invocationSpanAttributes = readInvocationSpanAttributes({
+    agentId,
+    messageUuid: userRow?.uuid,
+  });
 
   // User-hook event (ENTRY input)
   if (userRow) {
@@ -1076,7 +1081,7 @@ export function buildEventsFromBoundaries(boundaries, contentEvents, allParsed, 
       row => row.type === 'assistant' || isToolResult(row),
     );
     const legacyRecords = buildLegacyEvents(residualEvents, turnId, sessionId, agentId, runtimeConfig, records, observedTs);
-    return finalizeRecords(legacyRecords, cwd);
+    return finalizeRecords(legacyRecords, cwd, invocationSpanAttributes);
   }
 
   // Assign content events to boundaries.
@@ -1326,14 +1331,16 @@ export function buildEventsFromBoundaries(boundaries, contentEvents, allParsed, 
     }
   }
 
-  return finalizeRecords(records, cwd);
+  return finalizeRecords(records, cwd, invocationSpanAttributes);
 }
 
-function finalizeRecords(records, cwd) {
+function finalizeRecords(records, cwd, invocationSpanAttributes = {}) {
   markTurnBoundaries(records);
   for (const record of records) {
     if (cwd) record['agent.qoder.cwd'] = cwd;
-    Object.assign(record, SPAN_ATTRIBUTES, RESOURCE_BASE_FIELD_PATCH, RESOURCE_ATTRIBUTE_FIELDS);
+    // Invocation context is per SDK user message. It must override the static
+    // process environment so a pre-warmed Worker cannot leak a prior Task.
+    Object.assign(record, SPAN_ATTRIBUTES, invocationSpanAttributes, RESOURCE_BASE_FIELD_PATCH, RESOURCE_ATTRIBUTE_FIELDS);
   }
   return records;
 }
