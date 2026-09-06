@@ -46,10 +46,12 @@ function parseSpanAttributes(value) {
  * deleted here: delayed Stop callbacks and retry hooks must observe the same
  * attributes until their TTL expires.
  */
-export function readInvocationSpanAttributes({ agentId, messageUuid, dataDir = pilotDataDir(), now = Date.now() }) {
+export function readInvocationSpanAttributes({ agentId, messageUuid, dataDir = pilotDataDir(),
+  contextRoot = process.env.LOONGSUITE_PILOT_INVOCATION_CONTEXT_ROOT, now = Date.now() }) {
   if (typeof agentId !== 'string' || !AGENT_ID_RE.test(agentId)) return {};
   if (typeof messageUuid !== 'string' || !UUID_RE.test(messageUuid)) return {};
-  const file = path.join(dataDir, 'state', 'invocation-contexts', agentId, `${messageUuid}.json`);
+  if (contextRoot && !path.isAbsolute(contextRoot)) return {};
+  const file = path.join(contextRoot || path.join(dataDir, 'state', 'invocation-contexts'), agentId, `${messageUuid}.json`);
   try {
     const context = JSON.parse(fs.readFileSync(file, 'utf8'));
     const expiresAt = Date.parse(context?.expires_at);
