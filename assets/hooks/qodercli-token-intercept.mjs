@@ -16,7 +16,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const INTERCEPT_DIR = path.join(process.env.HOME || "/tmp", ".loongsuite-pilot", "logs");
+const INTERCEPT_DIR = path.join(process.env.LOONGSUITE_PILOT_DATA_DIR
+  || path.join(process.env.HOME || "/tmp", ".loongsuite-pilot"), "logs");
 // basename() keeps the value inside the log dir no matter what it holds.
 const INTERCEPT_FILE = path.join(
   INTERCEPT_DIR,

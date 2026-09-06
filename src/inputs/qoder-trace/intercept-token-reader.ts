@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { resolveHome } from '../../utils/fs-utils.js';
 import { createLogger } from '../../utils/logger.js';
 
@@ -30,6 +31,10 @@ export interface InterceptData {
 // qodercli and QoderWork write separate intercept files to avoid ID namespace
 // confusion and concurrent-write interference between the CLI and the GUI worker.
 export function getInterceptFile(filename = 'qodercli-intercept.jsonl'): string {
+  if (process.env.LOONGSUITE_PILOT_DATA_DIR &&
+    (filename === 'qodercli-intercept.jsonl' || filename === 'qoderclicn-intercept.jsonl')) {
+    return path.join(process.env.LOONGSUITE_PILOT_DATA_DIR, 'logs', path.basename(filename));
+  }
   return resolveHome(`~/.loongsuite-pilot/logs/${filename}`);
 }
 

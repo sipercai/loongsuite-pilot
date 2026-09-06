@@ -40,8 +40,9 @@ function defaultDataDir(environment: NodeJS.ProcessEnv): string {
   return resolveHome(environment.LOONGSUITE_PILOT_DATA_DIR || path.join(os.homedir(), '.loongsuite-pilot'));
 }
 
-export function invocationContextPath(dataDir: string, agentId: string, messageUuid: string): string {
-  return path.join(dataDir, 'state', 'invocation-contexts', agentId, `${messageUuid}.json`);
+export function invocationContextPath(dataDir: string, agentId: string, messageUuid: string, contextRoot?: string): string {
+  if (contextRoot && !path.isAbsolute(contextRoot)) throw new Error('invocation context root must be absolute');
+  return path.join(contextRoot || path.join(dataDir, 'state', 'invocation-contexts'), agentId, `${messageUuid}.json`);
 }
 
 function parseArgs(args: readonly string[]): ParsedArgs {
@@ -160,6 +161,7 @@ async function createContextExclusive(file: string, context: InvocationContext):
 
 export async function putInvocationContext(input: {
   readonly dataDir: string;
+  readonly contextRoot?: string;
   readonly agentId: string;
   readonly messageUuid: string;
   readonly spanAttributes: Readonly<Record<string, string>>;
@@ -172,7 +174,7 @@ export async function putInvocationContext(input: {
   if (!Number.isSafeInteger(ttlMs) || ttlMs < 1 || ttlMs > MAX_TTL_MS) throw new Error('invalid TTL');
   const spanAttributes = parseInvocationAttributes(input.spanAttributes);
   const now = input.now ?? new Date();
-  const file = invocationContextPath(input.dataDir, input.agentId, input.messageUuid);
+  const file = invocationContextPath(input.dataDir, input.agentId, input.messageUuid, input.contextRoot);
   const context: InvocationContext = {
     version: 1,
     agent_id: input.agentId,
@@ -220,6 +222,7 @@ export async function runInvocationContextCommand(
     const spanAttributes = parseInvocationAttributes(JSON.parse(raw));
     const status = await putInvocationContext({
       dataDir: defaultDataDir(options.environment ?? process.env),
+      contextRoot: (options.environment ?? process.env).LOONGSUITE_PILOT_INVOCATION_CONTEXT_ROOT,
       agentId: parsed.agentId,
       messageUuid: parsed.messageUuid,
       spanAttributes,

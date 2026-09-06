@@ -6,6 +6,7 @@ import {
   invocationContextPath,
   parseInvocationAttributes,
   putInvocationContext,
+  runInvocationContextCommand,
 } from '../../../src/cli/invocation-context.js';
 
 const agentId = 'qoder-cn';
@@ -23,6 +24,23 @@ async function newDataDir(): Promise<string> {
 }
 
 describe('invocation context store', () => {
+  it('routes the CLI and Hook to an explicit local context root without changing the data directory', async () => {
+    const root = await newDataDir();
+    const contextRoot = path.join(root, 'local-contexts');
+    // A file is deliberately used as the dataDir: the override must not touch it.
+    const unavailableDataDir = path.join(root, 'remote-data');
+    await fs.writeFile(unavailableDataDir, 'untouched');
+    const attrs = { 'agentcore.task_id': 'task-local' };
+    expect(await runInvocationContextCommand(['put', '--agent', agentId, '--message-uuid', messageUuid], {
+      environment: { LOONGSUITE_PILOT_DATA_DIR: unavailableDataDir, LOONGSUITE_PILOT_INVOCATION_CONTEXT_ROOT: contextRoot },
+      stdin: async () => JSON.stringify(attrs),
+    })).toBe(0);
+    const { readInvocationSpanAttributes } = await import('../../../assets/hooks/shared/invocation-context.mjs');
+    expect(readInvocationSpanAttributes({ agentId, messageUuid, dataDir: unavailableDataDir, contextRoot })).toEqual(attrs);
+    expect(await fs.readFile(unavailableDataDir, 'utf8')).toBe('untouched');
+    expect(readInvocationSpanAttributes({ agentId: 'qoder', messageUuid, contextRoot })).toEqual({});
+    expect(readInvocationSpanAttributes({ agentId, messageUuid, contextRoot: 'relative' })).toEqual({});
+  });
   it('writes an atomically-addressable, private context that the Qoder Hook can read', async () => {
     const root = await newDataDir();
     const status = await putInvocationContext({
