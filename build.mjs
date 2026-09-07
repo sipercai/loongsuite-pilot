@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { chmod, copyFile, mkdir } from 'node:fs/promises';
 
 const isProprietary = process.env.BUILD_MODE === 'proprietary';
 
@@ -30,7 +30,7 @@ const commonPlugins = [internalStubPlugin];
 
 await build({
   entryPoints: ['src/index.ts'],
-  outfile: 'dist/index.js',
+  outfile: 'dist/collector.js',
   platform: 'node',
   target: 'es2022',
   format: 'esm',
@@ -49,6 +49,21 @@ await build({
   define: commonDefine,
   plugins: commonPlugins,
 });
+
+// Per-invocation registration must not import the collector/native dependency
+// graph. Keep the public index.js command and argv unchanged for Runtime callers.
+await build({
+  entryPoints: ['src/cli/invocation-context.ts'],
+  outfile: 'dist/invocation-context.js',
+  platform: 'node',
+  target: 'es2022',
+  format: 'esm',
+  bundle: true,
+  minify: true,
+  treeShaking: true,
+});
+await copyFile('src/entrypoint.mjs', 'dist/index.js');
+await chmod('dist/index.js', 0o755);
 
 // Loaded by the banner above, before the daemon graph. Must keep
 // `packages: 'external'`: its require('sqlite3') has to resolve against the
