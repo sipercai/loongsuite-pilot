@@ -37,6 +37,7 @@
     "perf:cursor-hook": "node tests/performance/cursor-hook-processor.perf.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:invocation-context-artifact": "npm run build && node --test tests/integration/invocation-context-artifact.check.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "bash scripts/e2e/run-e2e.sh",
