@@ -86,7 +86,10 @@ function attachSafeCustomTopLevelFields(
     if (typeof rawValue !== 'string') continue;
 
     const value = rawValue.trim();
-    if (!value || value.length > MAX_CUSTOM_FIELD_VALUE_LENGTH || value.includes(',')) continue;
+    // These are structured JSON values, not comma-delimited environment fields.
+    // Invocation context permits commas; dropping them here loses Task identity
+    // after the Stop Hook has already resolved the correct per-message UUID.
+    if (!value || value.length > MAX_CUSTOM_FIELD_VALUE_LENGTH) continue;
 
     // Fill only: custom fields must never overwrite the normalized schema.
     if (entry[key] === undefined) entry[key] = value;
