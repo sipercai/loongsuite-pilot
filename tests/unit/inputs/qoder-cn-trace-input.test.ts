@@ -300,8 +300,8 @@ describe('QoderCnTraceInput.collect (session-level enrich)', () => {
     record['multica.issue.id'] = 'AGE-992';
     record['multica.user.id'] = 'staff-1';
     record['multica.api_token'] = 'blocked';
-    record['agentcore.task_id'] = 'task-managed-runtime';
-    record['agentcore.subtask_id'] = 'subtask-managed-runtime';
+    record['agentcore.task_id'] = 'task-managed-runtime,任务=甲';
+    record['agentcore.subtask_id'] = 'subtask-managed-runtime,任务=乙';
     await writeHookJsonl(logDir, [record]);
 
     const entries = await collectOnce();
@@ -309,8 +309,8 @@ describe('QoderCnTraceInput.collect (session-level enrich)', () => {
     expect(entries[0]).toMatchObject({
       'multica.issue.id': 'AGE-992',
       'multica.user.id': 'staff-1',
-      'agentcore.task_id': 'task-managed-runtime',
-      'agentcore.subtask_id': 'subtask-managed-runtime',
+      'agentcore.task_id': 'task-managed-runtime,任务=甲',
+      'agentcore.subtask_id': 'subtask-managed-runtime,任务=乙',
     });
     expect(entries[0]).not.toHaveProperty('multica.api_token');
   });
