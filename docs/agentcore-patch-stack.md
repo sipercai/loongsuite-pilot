@@ -36,7 +36,7 @@ Pilot 负责：
 4. `LOONGSUITE_PILOT_INVOCATION_CONTEXT_ROOT` 指向本地可写目录；CLI 与 Hook 必须一致。未设置仍使用 `<dataDir>/state/invocation-contexts`。
 5. Stop Hook 从 transcript user.uuid 查询 Context，动态属性优先于旧进程静态值；不消费/删除 Context，允许延迟和重试。
 6. JSON 属性进入 CN/Global canonical records 后继续保留，不能再按逗号分隔字符串处理。
-7. 托管 preload 与 Collector 必须用同一 intercept 文件；保留 `LOONGSUITE_INTERCEPT_PATH` 的既有分支契约（见 managed-context-paths 文档）。
+7. 托管 preload 与 Collector 必须用同一 intercept 文件：二者使用 `LOONGSUITE_PILOT_DATA_DIR` 下的 `logs/qodercli-intercept.jsonl` 或 `logs/qoderclicn-intercept.jsonl`，不能各自依赖不同 HOME（见 managed-context-paths 文档）。
 
 ## 轻量产物边界
 
