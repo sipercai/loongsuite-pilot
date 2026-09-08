@@ -6,6 +6,7 @@ import { ExportResultCode } from '@opentelemetry/core';
 import type { ExportResult } from '@opentelemetry/core';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { OtlpTraceFlusher } from '../../../../src/flushers/otlp-trace-flusher.js';
+import { parseResourceEnvironment } from '../../../../src/core/resource-env.js';
 import type { AgentActivityEntry } from '../../../../src/types/index.js';
 import type { TraceExporterLike } from '../../../../src/flushers/otlp-trace-flusher.js';
 
@@ -64,6 +65,34 @@ describe('OtlpTraceFlusher - CP5 no-double-emit regression', () => {
 
   afterEach(async () => {
     await flusher.shutdown();
+  });
+
+  it.each(['qoder', 'qoder-cn'])('exports environment attributes on Resource for %s', async agent => {
+    await flusher.shutdown();
+    flusher = new OtlpTraceFlusher({
+      ...makeConfig(),
+      resourceAttributes: parseResourceEnvironment(
+        'ownerid=001234,instantid=instance%2C01,service.name=must-not-override',
+      ),
+    }, undefined, () => makeCapturingExporter(captured));
+    // Reuse the existing conversion fixture; only change the agent identity.
+    const entries = (await loadFixtureEvents()).map(entry => ({
+      ...entry,
+      'gen_ai.agent.type': agent,
+    }));
+    await flusher.sendBatch(entries);
+    await flusher.flush();
+    expect(captured.length).toBeGreaterThan(0);
+    for (const span of captured) {
+      expect(span.resource.attributes).toMatchObject({
+        ownerid: '001234',
+        instantid: 'instance,01',
+        'service.name': `test-pilot-${agent}`,
+        'gen_ai.agent.type': agent,
+      });
+      expect(span.attributes).not.toHaveProperty('ownerid');
+      expect(span.attributes).not.toHaveProperty('instantid');
+    }
   });
 
   it('emits each (ENTRY/AGENT/STEP/LLM/TOOL) span exactly once per turn', async () => {
