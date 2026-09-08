@@ -1,4 +1,5 @@
 import * as os from 'node:os';
+import { parseResourceEnvironment } from './resource-env.js';
 import type {
   AgentsConfig,
   AnalyticsConfig,
@@ -475,8 +476,15 @@ function resolveGlobalSpanAttributes(file: ConfigFile | null): Record<string, st
 }
 
 function buildOtlpTraceRawConfig(file: ConfigFile | null): OtlpTraceRawConfig | undefined {
-  if (!file?.otlpTrace) return undefined;
-  return { ...file.otlpTrace };
+  const attributes = parseResourceEnvironment(env('OTEL_RESOURCE_ATTRIBUTES'));
+  if (Object.keys(attributes).length === 0) {
+    return file?.otlpTrace ? { ...file.otlpTrace } : undefined;
+  }
+  return {
+    ...file?.otlpTrace,
+    // Consistent with Pilot's existing env-over-file configuration policy.
+    resourceAttributes: { ...file?.otlpTrace?.resourceAttributes, ...attributes },
+  };
 }
 
 function parseOptionalBool(value: unknown): boolean | undefined {

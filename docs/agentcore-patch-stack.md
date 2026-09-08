@@ -19,6 +19,11 @@
 第 4 项修复是独立的采集归一化问题，不要与 CLI 性能修改混在同一提交。
 后续纯文档提交不属于功能补丁，重放时可以最后单独带上。
 
+后续独立补丁：`src/core/resource-env.ts` 与 ConfigLoader 接线支持
+`OTEL_RESOURCE_ATTRIBUTES`，解析对齐 OTel Python，详见
+[Resource 环境变量](./agentcore-resource-env.md)。该补丁不依赖 UUID 协议；
+跟进上游时若已有等价功能，优先复用，并保留解析与 Resource 导出回归测试。
+
 ## Runtime/Pilot 边界（跟进上游时必须保留）
 
 Runtime 负责：

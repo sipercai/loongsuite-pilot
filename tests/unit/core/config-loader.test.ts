@@ -29,6 +29,7 @@ describe('ConfigLoader', () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     clearSlsEnv();
+    vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', '');
   });
 
   afterEach(() => {
@@ -1351,6 +1352,37 @@ describe('ConfigLoader', () => {
   });
 
   describe('otlpTrace config (new path) and cms fallback', () => {
+    it('supports environment-only resources with a CMS endpoint and snapshots them at load', async () => {
+      mockReadJsonFile.mockResolvedValueOnce({ cms: { licenseKey: 'test', endpoint: 'http://localhost:4318' } });
+      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'ownerid=001,instantid=instance%2C01');
+      const config = await loadConfig();
+      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'ownerid=changed');
+      expect(buildOtlpTraceConfig(config)?.resourceAttributes).toMatchObject({
+        ownerid: '001', instantid: 'instance,01', 'acs.arms.service.feature': 'genai_app',
+      });
+    });
+
+    it('merges env over file resources without changing endpoint, headers or enabling export', async () => {
+      mockReadJsonFile.mockResolvedValueOnce({
+        collectTrace: false,
+        otlpTrace: { endpoint: 'http://localhost:4318', headers: { 'x-test': 'test' },
+          resourceAttributes: { ownerid: 'file', team: 'infra' } },
+      });
+      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'ownerid=env,instantid=001');
+      const config = await loadConfig();
+      expect(config.otlpTrace).toMatchObject({
+        endpoint: 'http://localhost:4318', headers: { 'x-test': 'test' },
+        resourceAttributes: { ownerid: 'env', instantid: '001', team: 'infra' },
+      });
+      expect(buildOtlpTraceConfig(config)).toBeUndefined();
+    });
+
+    it('ignores malformed env without discarding configured resources', async () => {
+      mockReadJsonFile.mockResolvedValueOnce({ otlpTrace: { resourceAttributes: { ownerid: 'file' } } });
+      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'malformed,,');
+      expect((await loadConfig()).otlpTrace?.resourceAttributes).toEqual({ ownerid: 'file' });
+    });
+
     it('loadConfig populates otlpTrace from file', async () => {
       mockReadJsonFile.mockResolvedValueOnce({
         otlpTrace: {
