@@ -75,3 +75,30 @@ describe('OtlpTraceFlusher - config validation', () => {
     expect(flusher.name).toBe('otlp-trace');
   });
 });
+
+// Namespace must survive all Resource construction paths, including projected records.
+describe('OtlpTraceFlusher - workspace namespace precedence', () => {
+  it.each([
+    [undefined, undefined, 'loongsuite-pilot'],
+    [undefined, 'event-workspace', 'event-workspace'],
+    ['configured-workspace', undefined, 'configured-workspace'],
+    ['configured-workspace', 'event-workspace', 'configured-workspace'],
+    ['', 'event-workspace', ''],
+  ])('uses configured %s before projected %s', async (configured, projected, expected) => {
+    const flusher = new OtlpTraceFlusher({
+      enabled: true,
+      endpoints: [{ name: 'primary', endpoint: 'http://localhost:4318' }],
+      protocol: 'http/protobuf',
+      serviceName: 'test',
+      resourceAttributes: configured === undefined ? {} : { 'service.namespace': configured },
+    });
+    try {
+      const resource = (flusher as any).buildResource('qoder', 'test',
+        projected === undefined ? {} : { 'service.namespace': projected });
+      expect(resource.attributes['service.namespace']).toBe(expected);
+      expect(resource.attributes['service.name']).toBe('test');
+    } finally {
+      await flusher.shutdown();
+    }
+  });
+});

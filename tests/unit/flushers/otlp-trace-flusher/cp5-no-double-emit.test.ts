@@ -72,7 +72,7 @@ describe('OtlpTraceFlusher - CP5 no-double-emit regression', () => {
     flusher = new OtlpTraceFlusher({
       ...makeConfig(),
       resourceAttributes: parseResourceEnvironment(
-        'ownerid=001234,instantid=instance%2C01,service.name=must-not-override',
+        'ownerid=001234,instantid=instance%2C01,service.name=must-not-override,service.namespace=ws-agentcore',
       ),
     }, undefined, () => makeCapturingExporter(captured));
     // Reuse the existing conversion fixture; only change the agent identity.
@@ -87,6 +87,7 @@ describe('OtlpTraceFlusher - CP5 no-double-emit regression', () => {
       expect(span.resource.attributes).toMatchObject({
         ownerid: '001234',
         instantid: 'instance,01',
+        'service.namespace': 'ws-agentcore',
         'service.name': `test-pilot-${agent}`,
         'gen_ai.agent.type': agent,
       });

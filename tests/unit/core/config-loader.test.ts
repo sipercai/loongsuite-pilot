@@ -1366,13 +1366,13 @@ describe('ConfigLoader', () => {
       mockReadJsonFile.mockResolvedValueOnce({
         collectTrace: false,
         otlpTrace: { endpoint: 'http://localhost:4318', headers: { 'x-test': 'test' },
-          resourceAttributes: { ownerid: 'file', team: 'infra' } },
+          resourceAttributes: { ownerid: 'file', team: 'infra', 'service.namespace': 'file-workspace' } },
       });
-      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'ownerid=env,instantid=001');
+      vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'ownerid=env,instantid=001,service.namespace=env-workspace');
       const config = await loadConfig();
       expect(config.otlpTrace).toMatchObject({
         endpoint: 'http://localhost:4318', headers: { 'x-test': 'test' },
-        resourceAttributes: { ownerid: 'env', instantid: '001', team: 'infra' },
+        resourceAttributes: { ownerid: 'env', instantid: '001', team: 'infra', 'service.namespace': 'env-workspace' },
       });
       expect(buildOtlpTraceConfig(config)).toBeUndefined();
     });

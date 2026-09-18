@@ -3,7 +3,7 @@
 在启动 Pilot Collector **之前**向其进程环境传入：
 
 ```sh
-export OTEL_RESOURCE_ATTRIBUTES='ownerid=001234,instantid=instance-01'
+export OTEL_RESOURCE_ATTRIBUTES='service.namespace=ws-example,service.app.owner_id=001234'
 ```
 
 配置加载时读取一次，适用于 Qoder Global 和 CN。属性进入导出 Span 的
@@ -26,13 +26,19 @@ OTel JS 新版本与 Python 的非法输入处理不同；本补丁明确选择 
 `otlpTrace.resourceAttributes` 的同名值。这是 Pilot 配置优先级，不是 Python
 `Resource.create()` 的合并优先级。
 
-Pilot 现有保留字段与 ARMS 资源字段的优先级不变。`service.name` 等保留字段仍由
+`service.namespace` 不再是保留字段，用于传入 AgentCore Workspace ID。
+其优先级为：`OTEL_RESOURCE_ATTRIBUTES` > `otlpTrace.resourceAttributes` >
+事件中配置为投影到 Resource 的同名属性 > 默认值 `loongsuite-pilot`。
+显式空字符串同样保留，不会回退到默认值。事件不能覆盖启动时明确指定的 Workspace。
+这项优先级仅适用于 `service.namespace`，其他字段保持现有规则。
+
+`service.name`、`service.instance.id` 等保留字段仍由
 Pilot 管理，不能通过该变量覆盖；本补丁不新增 `OTEL_SERVICE_NAME` 支持。
 它也不会启用采集或改变 CMS workspace、上报 endpoint、认证和路由。
 
 ## 与 Task/Subtask 的边界
 
-ownerid/instantid 是 Collector 生命周期内的 Resource 属性。按 Run 变化的
+Workspace/owner 是 Collector 生命周期内的 Resource 属性。按 Run 变化的
 Task/Subtask 继续使用 UUID Invocation Context 写入 Span attributes，不能改用
 此进程级环境变量，否则 WarmQuery/并发调用会串值。
 

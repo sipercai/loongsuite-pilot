@@ -344,7 +344,6 @@ const RESERVED_RESOURCE_KEYS = new Set([
   'service.name',
   'service.version',
   'service.instance.id',
-  'service.namespace',
   'host.name',
   'gen_ai.agent.type',
   'gen_ai.agent.system',
@@ -1673,6 +1672,8 @@ export class OtlpTraceFlusher extends BaseFlusher {
         logger.warn(`projected resource attribute key "${k}" looks sensitive and will be ignored`);
         continue;
       }
+      // Explicit startup configuration (env over file) owns the workspace namespace.
+      if (k === 'service.namespace' && userAttrs[k] !== undefined) continue;
       if (userAttrs[k] !== undefined && userAttrs[k] !== String(v)) {
         logger.warn(`resourceAttributes key "${k}" is overridden by projected resource attribute`);
       }
