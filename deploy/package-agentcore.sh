@@ -18,12 +18,21 @@ cp package.json package-lock.json "$PKG/"
 rm -f "$PKG/scripts/migrate-internal-config.js" "$PKG/scripts/updater-daemon.js"
 find "$PKG" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$PKG" -type f -name '*.pyc' -delete
+# Contexts copied from macOS may contain AppleDouble sidecars. They are not
+# source files: Agent definition discovery would try to parse ._qwenpaw.json.
+find "$PKG" -type f \( -name '._*' -o -name '.DS_Store' \) -delete
 (
   cd "$PKG"
   npm ci --omit=dev --registry="${NPM_REGISTRY:-https://registry.npmmirror.com/}"
   node -e "require('sqlite3'); require('zstd-napi')"
   test -s dist/index.js && test -s dist/collector.js && test -s dist/invocation-context.js
   test -s agents.d/qwenpaw.json && test -s assets/plugins/qwenpaw/loongsuite-pilot/plugin.py
+  node --input-type=module -e '
+    import fs from "node:fs";
+    for (const file of fs.readdirSync("agents.d").filter(n=>n.endsWith(".json"))) {
+      const definition=JSON.parse(fs.readFileSync(`agents.d/${file}`,"utf8"));
+      if (!definition.id) throw new Error(`Invalid Agent definition: ${file}`);
+    }'
   PILOT_BUILD_COMMIT="$COMMIT" node --input-type=module -e '
     import fs from "node:fs";
     const pkg=JSON.parse(fs.readFileSync("package.json"));
