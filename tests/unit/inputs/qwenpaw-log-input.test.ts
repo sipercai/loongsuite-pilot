@@ -4,9 +4,19 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { QwenPawLogInput } from '../../../src/inputs/qwenpaw-log/qwenpaw-log-input.js';
 import { StateStore } from '../../../src/checkpoints/state-store.js';
+import { InputManager } from '../../../src/core/input-manager.js';
+import { BaseFlusher } from '../../../src/flushers/base-flusher.js';
+import type { AgentActivityEntry } from '../../../src/types/index.js';
 
 class Input extends QwenPawLogInput {
   collectOnce() { return this.collect(); }
+  requestOnce() { this.requestCollection(); }
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
 }
 
 describe('QwenPaw process logs', () => {
@@ -54,5 +64,104 @@ describe('QwenPaw process logs', () => {
   it('ignores foreign-agent records in a matching file', async () => {
     await fs.writeFile(path.join(dir, 'qwenpaw-day-101.jsonl'), JSON.stringify({ ...record('foreign'), 'gen_ai.agent.type': 'qoder' }) + '\n');
     expect(await new Input({ sessionDir: dir, stateStore: new StateStore(path.join(dir, 'state.json')) }).collectOnce()).toEqual([]);
+  });
+
+  it('tails a just-appended terminal record on stop and drains its asynchronous dispatch', async () => {
+    const file = path.join(dir, 'qwenpaw-day-101.jsonl');
+    const start = { ...record('start'), 'event.name': 'llm.request' };
+    await fs.writeFile(file, JSON.stringify(start) + '\n');
+    const statePath = path.join(dir, 'state.json');
+    const input = new Input({ sessionDir: dir, stateStore: new StateStore(statePath), pollIntervalMs: 60_000 });
+    const started = deferred();
+    const terminal = deferred();
+    const releaseTerminal = deferred();
+    const received: AgentActivityEntry[] = [];
+    const manager = new InputManager();
+    manager.setFlusher(new class extends BaseFlusher {
+      readonly name = 'shutdown-capture';
+      async send(entry: AgentActivityEntry) { await this.sendBatch([entry]); }
+      async sendBatch(entries: AgentActivityEntry[]) {
+        if (entries.some(entry => entry['event.id'] === 'end')) {
+          terminal.resolve();
+          await releaseTerminal.promise;
+        }
+        received.push(...entries);
+        if (entries.some(entry => entry['event.id'] === 'start')) started.resolve();
+      }
+      async flush() {}
+      async shutdown() {}
+    }());
+    manager.registerInput(input);
+    try {
+      await input.start();
+      await started.promise;
+      await fs.appendFile(file, line('end'));
+      let stopped = false;
+      const stopping = manager.stopAll().then(() => { stopped = true; });
+      await terminal.promise;
+      expect(stopped).toBe(false);
+      releaseTerminal.resolve();
+      await stopping;
+      expect(received.map(entry => [entry['event.id'], entry['event.name']])).toEqual([
+        ['start', 'llm.request'], ['end', 'llm.response'],
+      ]);
+      const restored = new StateStore(statePath);
+      await restored.load();
+      expect(await new Input({ sessionDir: dir, stateStore: restored }).collectOnce()).toEqual([]);
+    } finally {
+      releaseTerminal.resolve();
+      await manager.stopAll();
+    }
+  });
+
+  it('waits for an in-flight cycle before its final tail without overlapping reads', async () => {
+    const file = path.join(dir, 'qwenpaw-day-101.jsonl');
+    await fs.writeFile(file, line('start'));
+    const cycleRead = deferred();
+    const releaseCycle = deferred();
+    class GatedInput extends Input {
+      holdNext = false;
+      active = 0;
+      maxActive = 0;
+      cycles = 0;
+      protected override async collect() {
+        this.cycles++;
+        this.maxActive = Math.max(this.maxActive, ++this.active);
+        try {
+          const entries = await super.collect();
+          if (this.holdNext) {
+            this.holdNext = false;
+            cycleRead.resolve();
+            await releaseCycle.promise;
+          }
+          return entries;
+        } finally {
+          this.active--;
+        }
+      }
+    }
+    const input = new GatedInput({ sessionDir: dir, stateStore: new StateStore(path.join(dir, 'state.json')), pollIntervalMs: 60_000 });
+    const received: string[] = [];
+    input.on('entries', (entries: AgentActivityEntry[]) => { received.push(...entries.map(entry => entry['event.id'])); });
+    try {
+      await input.start();
+      await fs.appendFile(file, line('in-flight'));
+      input.holdNext = true;
+      input.requestOnce();
+      await cycleRead.promise;
+      await fs.appendFile(file, line('end'));
+      const stopping = input.stop();
+      expect(input.cycles).toBe(2);
+      releaseCycle.resolve();
+      await stopping;
+      expect(received).toEqual(['start', 'in-flight', 'end']);
+      expect(input.maxActive).toBe(1);
+      expect(input.cycles).toBe(3);
+      await input.stop();
+      expect(input.cycles).toBe(3);
+    } finally {
+      releaseCycle.resolve();
+      await input.stop();
+    }
   });
 });

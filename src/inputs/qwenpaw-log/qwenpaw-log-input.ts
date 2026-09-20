@@ -15,6 +15,20 @@ export class QwenPawLogInput extends BaseSessionInput {
     super({ ...options, filePattern: 'qwenpaw-*.jsonl' });
   }
 
+  protected override async onStop(): Promise<void> {
+    // BaseInput has stopped polling and awaited its serialized cycle before
+    // calling this hook. Read native shutdown's final records only now, then
+    // let InputManager drain the emitted batch before the flusher shuts down.
+    try {
+      const entries = await this.collect();
+      if (entries.length > 0) this.emit('entries', entries);
+      await this.stateStore.save();
+    } catch (error) {
+      this.logger.error('final QwenPaw collection failed', { error: String(error) });
+      this.emit('collect-error', error);
+    }
+  }
+
   protected async discoverSessionFiles(): Promise<string[]> {
     try {
       const entries = await fs.readdir(this.sessionDir, { withFileTypes: true });
