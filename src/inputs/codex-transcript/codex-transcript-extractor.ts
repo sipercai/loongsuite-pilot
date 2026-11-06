@@ -504,6 +504,7 @@ function extractCodexTurn(
     if (!tool) continue;
     tool.completedAtMs = timestamp;
     tool.output = toolOutput.output;
+    tool.errorType = agentCoreToolError(payload.output);
     step.completedAtMs = Math.max(step.completedAtMs, timestamp);
     touchStep(envelope, source);
     markActivity(timestamp);
@@ -638,6 +639,22 @@ function transcriptToolCall(
     input: normalizeToolInput(name, parseMaybeJson(rawInput)),
     startedAtMs: timestamp,
   };
+}
+
+/** Match the Runtime's bounded error envelope; arbitrary error-looking text is content. */
+function agentCoreToolError(output: unknown): string | undefined {
+  const parsed = typeof output === 'string' ? parseMaybeJson(output) : output;
+  if (asRecord(parsed)?.agentcore_tool_error === 'CODEX_TOOL_FAILED') return 'CODEX_TOOL_FAILED';
+  if (!Array.isArray(parsed)) return undefined;
+  for (const part of parsed) {
+    const block = asRecord(part);
+    if (block?.type !== 'input_text' && block?.type !== 'text') continue;
+    if (typeof block.text === 'string'
+      && asRecord(parseMaybeJson(block.text))?.agentcore_tool_error === 'CODEX_TOOL_FAILED') {
+      return 'CODEX_TOOL_FAILED';
+    }
+  }
+  return undefined;
 }
 
 function transcriptToolOutput(

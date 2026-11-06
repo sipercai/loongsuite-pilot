@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "capabilities": ["turn-span-context-json", "managed-turn-context-gate", "agentcore-tool-error"]
+}

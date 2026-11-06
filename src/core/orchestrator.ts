@@ -1368,6 +1368,7 @@ export class Orchestrator extends EventEmitter {
       && isAgentMultimodalEnabled('codex', codexAgentCfg);
     const codexTranscriptInput = new CodexTranscriptInput({
       stateStore: this.stateStore,
+      requireTurnSpanContext: codexAgentCfg.requireTurnSpanContext === true,
       multimodal: {
         enabled: codexMultimodalEnabled,
         uploadMode: codexAgentCfg.multimodal?.uploadMode ?? 'none',

@@ -165,6 +165,7 @@ export interface CodexTranscriptTool {
   startedAtMs: number;
   output?: JsonValue;
   completedAtMs?: number;
+  errorType?: string;
 }
 
 export interface CodexTranscriptStep {

@@ -104,6 +104,7 @@ interface SegmentRecoveryDiagnostics {
 
 type SegmentRecoveryResult = {
   kind: 'unparseable';
+  waitingForContext?: boolean;
   entries: [];
   consumedEndOffset: number;
   diagnostics: SegmentRecoveryDiagnostics;
@@ -146,6 +147,8 @@ export interface CodexTranscriptInputOptions extends InputOptions {
   sessionDir?: string;
   wakeupDir?: string;
   spanContextDir?: string;
+  /** Never emit managed root turns before their invocation context is persisted. */
+  requireTurnSpanContext?: boolean;
   /** Multimodal options (enabled + processor). */
   multimodal?: {
     enabled: boolean;
@@ -162,6 +165,7 @@ export class CodexTranscriptInput extends BaseInput {
   private readonly sessionDir: string;
   private readonly wakeupDir: string;
   private readonly spanContextDir: string;
+  private readonly requireTurnSpanContext: boolean;
   private readonly includeMultimodal: boolean;
   private readonly multimodalUploadMode: MultimodalUploadMode;
   private readonly multimodalProcessor: MultimodalProcessor | null;
@@ -186,6 +190,7 @@ export class CodexTranscriptInput extends BaseInput {
     this.sessionDir = opts.sessionDir ?? resolveHome(DEFAULT_SESSION_DIR);
     this.wakeupDir = opts.wakeupDir ?? defaultWakeupDir();
     this.spanContextDir = opts.spanContextDir ?? defaultSpanContextDir();
+    this.requireTurnSpanContext = opts.requireTurnSpanContext === true;
     this.includeMultimodal = includeMultimodal;
     this.multimodalUploadMode = opts.multimodal?.uploadMode ?? 'none';
     this.multimodalProcessor = includeMultimodal ? processor : null;
@@ -387,8 +392,14 @@ export class CodexTranscriptInput extends BaseInput {
     if (ownerMeta?.depth === 0) this.registerPersistedSubagentSpawns(checkpoint, ownerMeta.threadId);
 
     const hasCopiedPrefix = hasCopiedHistoryPrefix(ownerMeta);
+    // A restored App Server thread carries ordinary session_meta followed by
+    // historical turns, rather than a fork marker. Only an exact Start-hook
+    // anchor may establish the managed collection boundary for that first scan.
+    const managedStart = this.requireTurnSpanContext && ownerMeta?.depth === 0
+      && checkpoint.scanOffset === 0 && checkpoint.activeTurn === null
+      ? await this.readWakeupMarker(ownerMeta.threadId, filePath) : undefined;
     if (
-      hasCopiedPrefix
+      (hasCopiedPrefix || managedStart?.initialTurnId !== undefined)
       && checkpoint.activeTurn === null
       && checkpoint.pendingTerminal === null
     ) {
@@ -458,6 +469,16 @@ export class CodexTranscriptInput extends BaseInput {
     }
 
     let scannedBytes = 0;
+
+    // Waiting for a managed registration is not a parse failure. Preserve the
+    // pending range without rewriting the checkpoint or warning on every poll.
+    if (this.requireTurnSpanContext && !isDirectSubagent && checkpoint.pendingTerminal
+      && checkpoint.activeTurn && !await this.readTurnSpanAttributes(
+        ownerMeta?.threadId ?? sessionIdFromTranscriptPath(filePath), checkpoint.activeTurn.turnId,
+      )) {
+      if (checkpointChanged) this.saveCheckpoint(key, checkpoint);
+      return emittedCount;
+    }
 
     const hadPendingTerminal = checkpoint.pendingTerminal !== null;
     const pendingResult = await this.recoverPendingTerminal(filePath, checkpoint);
@@ -657,7 +678,7 @@ export class CodexTranscriptInput extends BaseInput {
                 nextScanOffset,
                 recovered.diagnostics.sourceRecordCount,
               );
-              this.logger.warn('terminal Codex turn could not be parsed; retaining it for the next scan', {
+              if (!recovered.waitingForContext) this.logger.warn('terminal Codex turn could not be parsed; retaining it for the next scan', {
                 transcriptPath: filePath,
                 turnId: terminalTurnId,
                 range: { startOffset: checkpoint.activeTurn.startOffset, endOffset: nextScanOffset },
@@ -746,16 +767,24 @@ export class CodexTranscriptInput extends BaseInput {
       };
     }
     const runtime = this.getInputRuntimeAccumulator();
-    const records = await readJsonLines(
-      filePath,
-      activeTurn.startOffset,
-      endOffset,
-      runtime,
-    );
     const metaRecord = checkpoint.ownerSessionMetaOffset === null
       ? null
       : await readJsonLineAt(filePath, checkpoint.ownerSessionMetaOffset, runtime);
     const meta = metaRecord ? extractCodexTranscriptMeta(metaRecord) : null;
+    const spanAttributes = await this.readTurnSpanAttributes(
+      meta?.threadId ?? sessionIdFromTranscriptPath(filePath), activeTurn.turnId,
+    );
+    // Root turns can outlive several polling cycles. A Stop-only registration
+    // arrives too late for already exported model waves. Keep the exact source
+    // range and emitted-ID state intact until this turn's registration arrives.
+    // Native children retain the existing parent/linker recovery contract.
+    if (this.requireTurnSpanContext && (!meta || meta.depth === 0) && !spanAttributes) {
+      return {
+        kind: 'unparseable', waitingForContext: true, entries: [], consumedEndOffset: activeTurn.startOffset,
+        diagnostics: emptySegmentRecoveryDiagnostics(0, activeTurn.emittedStepCount ?? 0),
+      };
+    }
+    const records = await readJsonLines(filePath, activeTurn.startOffset, endOffset, runtime);
     const extraction = extractCodexPartialTurnWithBoundaries(
       records.items,
       meta,
@@ -883,10 +912,7 @@ export class CodexTranscriptInput extends BaseInput {
       ? endOffset
       : extraction.consumedEndOffset;
 
-    const [resourceAttributes, spanAttributes] = await Promise.all([
-      this.readWakeupResourceAttributes(turn.sessionId),
-      this.readTurnSpanAttributes(turn.sessionId, activeTurn.turnId),
-    ]);
+    const resourceAttributes = await this.readWakeupResourceAttributes(turn.sessionId);
     let outputEntries = resourceAttributes
       ? attachWakeupResourceAttributes(entries, resourceAttributes)
       : entries;
@@ -1672,7 +1698,7 @@ export class CodexTranscriptInput extends BaseInput {
           searchOffset: located.startOffset,
         }
       : undefined;
-    this.logger.info('anchored fork/subagent rollout at its first owned turn', {
+    this.logger.info('anchored rollout at its first owned turn', {
       transcriptPath: filePath,
       turnId: located.turnId,
       anchorKind: located.anchorKind,

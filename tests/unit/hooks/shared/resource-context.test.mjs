@@ -94,6 +94,13 @@ describe('hook resource context helper', () => {
 });
 
 describe('parseSpanAttributesFromEnv', () => {
+  test('accepts structured invocation attributes without splitting commas, equals signs or Unicode', () => {
+    expect(parseSpanAttributesFromEnv({ LOONGSUITE_PILOT_SPAN_ATTRIBUTES: JSON.stringify({
+      'agentcore.task_name': '任务, 名称=一\n二', 'agentcore.run_id': 'run-1',
+      'gen_ai.request.model': 'must-not-override', 'api.secret': 'must-not-leak', 'custom.number': 123,
+    }) })).toEqual({ 'agentcore.task_name': '任务, 名称=一\n二', 'agentcore.run_id': 'run-1' });
+    expect(parseSpanAttributesFromEnv({ LOONGSUITE_PILOT_SPAN_ATTRIBUTES: '{broken' })).toEqual({});
+  });
   test('parses key=value pairs and trims', () => {
     const attrs = parseSpanAttributesFromEnv({
       LOONGSUITE_PILOT_SPAN_ATTRIBUTES: 'multica.issue.id=AGE-992, multica.user.id = staff ',

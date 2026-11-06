@@ -253,6 +253,7 @@ function controlOnlyAbortedTurn(sessionId: string, turnId: string, start: string
 async function createInput(
   root: string,
   pollIntervalMs = 10,
+  requireTurnSpanContext = false,
 ): Promise<{
   input: CodexTranscriptInput;
   entries: AgentActivityEntry[];
@@ -273,6 +274,7 @@ async function createInput(
     wakeupDir,
     spanContextDir,
     pollIntervalMs,
+    requireTurnSpanContext,
   });
   const entries: AgentActivityEntry[] = [];
   const batches: AgentActivityEntry[][] = [];
@@ -1578,6 +1580,86 @@ describe('CodexTranscriptInput', () => {
       expect(entry['multica.agent.name']).toBe('codex-agent');
       expect(entry['multica.runtime.name']).toBe('codex');
     }
+  });
+
+  it('holds managed turns until their own context exists, including after restart', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-managed-context-'));
+    tempDirs.push(root);
+    const first = await createInput(root, 10, true);
+    await writeTranscript(first.sessionDir, completedTurn());
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await first.input.stop();
+    await first.stateStore.save();
+    expect(first.entries).toEqual([]);
+
+    const restarted = await createInput(root, 10, true);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(restarted.entries).toEqual([]);
+    await writeSpanContext(restarted.spanContextDir, 'session-1', 'turn-other', {
+      session_id: 'session-1', turn_id: 'turn-other',
+      spanAttributes: { 'agentcore.run_id': 'wrong-run' }, received_at: new Date().toISOString(),
+    });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(restarted.entries).toEqual([]);
+    await writeSpanContext(restarted.spanContextDir, 'session-1', 'turn-1', {
+      session_id: 'session-1', turn_id: 'turn-1',
+      spanAttributes: { 'agentcore.run_id': 'right-run', 'agentcore.task_name': '任务, 名称=一' },
+      received_at: new Date().toISOString(),
+    });
+    await waitFor(() => restarted.entries.some(entry => entry['gen_ai.turn.end'] === true));
+    await restarted.input.stop();
+    expect(restarted.entries.every(entry => entry['agentcore.run_id'] === 'right-run')).toBe(true);
+    expect(restarted.entries.every(entry => entry['agentcore.task_name'] === '任务, 名称=一')).toBe(true);
+    expect(new Set(restarted.entries.map(entry => entry['event.id'])).size).toBe(restarted.entries.length);
+  });
+
+  it('exports exact AgentCore dynamic-tool failures without treating ordinary result text as an error', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-runtime-tool-status-'));
+    tempDirs.push(root);
+    const { input, entries, sessionDir } = await createInput(root);
+    const marker = JSON.stringify({ agentcore_tool_error: 'CODEX_TOOL_FAILED', message: 'Tool operation failed.' });
+    const rows = completedTurn().trim().split('\n').map(line => JSON.parse(line));
+    const failed = rows.find(row => row.payload.type === 'function_call_output');
+    failed.payload.output = [{ type: 'input_text', text: marker }];
+    await writeTranscript(sessionDir, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    await waitFor(() => entries.some(entry => entry['gen_ai.turn.end'] === true));
+    await input.stop();
+    const results = entries.filter(entry => entry['event.name'] === 'tool.result');
+    expect(results.find(entry => entry['gen_ai.tool.call.id'] === 'call-1')).toMatchObject({
+      'tool.result.status': 'failure', 'error.type': 'CODEX_TOOL_FAILED',
+    });
+    expect(results.find(entry => entry['gen_ai.tool.call.id'] === 'call-2')?.['tool.result.status']).toBe('success');
+    expect(JSON.stringify(results.find(entry => entry['gen_ai.tool.call.id'] === 'call-1'))).toContain('agentcore_tool_error');
+  });
+
+  it('anchors a restored managed thread after imported history and preserves subsequent turns', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-managed-restore-'));
+    tempDirs.push(root);
+    const first = await createInput(root, 10, true);
+    await writeWakeupMarker(first.wakeupDir, 'session-1', {
+      session_id: 'session-1', initial_turn_id: 'turn-new', hook_event: 'user-prompt-submit',
+    });
+    await writeSpanContext(first.spanContextDir, 'session-1', 'turn-new', {
+      session_id: 'session-1', turn_id: 'turn-new', spanAttributes: { 'agentcore.run_id': 'new-run' },
+      received_at: new Date().toISOString(),
+    });
+    const restored = completedTurn() + simpleCompletedTurn('session-1', 'turn-new', 'new prompt', 'new answer',
+      10, 2, '2026-06-24T07:00:00Z').join('\n') + '\n';
+    const transcript = await writeTranscript(first.sessionDir, restored);
+    await waitFor(() => first.entries.some(entry => entry['gen_ai.turn.end'] === true));
+    await first.input.stop(); await first.stateStore.save();
+    expect(first.entries.every(entry => entry['agentcore.run_id'] === 'new-run')).toBe(true);
+    expect(first.entries.every(entry => entry['agent.codex.transcript_turn_id'] === 'turn-new')).toBe(true);
+    const next = await createInput(root, 10, true);
+    await writeSpanContext(next.spanContextDir, 'session-1', 'turn-next', {
+      session_id: 'session-1', turn_id: 'turn-next', spanAttributes: { 'agentcore.run_id': 'next-run' },
+      received_at: new Date().toISOString(),
+    });
+    await fs.appendFile(transcript, simpleCompletedTurn('session-1', 'turn-next', 'next prompt', 'next answer',
+      20, 3, '2026-06-24T08:00:00Z').join('\n') + '\n');
+    await waitFor(() => next.entries.some(entry => entry['gen_ai.turn.end'] === true));
+    await next.input.stop();
+    expect(next.entries.every(entry => entry['agentcore.run_id'] === 'next-run')).toBe(true);
   });
 
   it('keeps invocation attributes isolated by turn within one Codex session', async () => {

@@ -85,7 +85,7 @@ export function collectResourceAttributesFromEnv(env = process.env, opts = {}) {
 }
 
 /**
- * Parse caller-supplied span attributes from an env var (`key=value,key=value`).
+ * Parse caller-supplied span attributes from JSON or `key=value,key=value`.
  * Returns a flat `{ field: value }` map suitable for spreading onto records as
  * top-level fields. Reserved-prefix keys, sensitive names, over-long values, and
  * malformed pairs are dropped. Never throws — collection must not block the host.
@@ -98,13 +98,24 @@ export function parseSpanAttributesFromEnv(env = process.env, opts = {}) {
 
   const raw = env[envName];
   if (typeof raw !== 'string' || raw.length === 0) return out;
-
-  for (const pair of raw.split(',')) {
-    const idx = pair.indexOf('=');
-    if (idx <= 0) continue;
-
-    const key = pair.slice(0, idx).trim();
-    const value = pair.slice(idx + 1).trim();
+  if (Buffer.byteLength(raw, 'utf8') > 64 * 1_024) return out;
+  let pairs;
+  if (raw.trimStart().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
+      pairs = Object.entries(parsed);
+    } catch { return out; }
+  } else {
+    pairs = raw.split(',').flatMap(pair => {
+      const idx = pair.indexOf('=');
+      return idx > 0 ? [[pair.slice(0, idx), pair.slice(idx + 1)]] : [];
+    });
+  }
+  for (const [rawKey, rawValue] of pairs.slice(0, 32)) {
+    if (typeof rawValue !== 'string') continue;
+    const key = rawKey.trim();
+    const value = rawValue.trim();
     if (!key || !value) continue;
 
     const invocationIdentityField = allowInvocationIdentity
@@ -119,7 +130,7 @@ export function parseSpanAttributesFromEnv(env = process.env, opts = {}) {
       continue;
     }
 
-    if (isReservedSpanAttrKey(key)) {
+    if (!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(key) || isReservedSpanAttrKey(key)) {
       warnSkip(agentId, key, 'reserved prefix');
       continue;
     }

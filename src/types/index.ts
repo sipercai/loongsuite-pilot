@@ -234,6 +234,8 @@ export interface AgentMultimodalConfig {
 export interface AgentConfig {
   enabled?: boolean;
   captureMessageContent: boolean;
+  /** Managed Codex only: wait for native turn-scoped invocation context before emitting. */
+  requireTurnSpanContext?: boolean;
   multimodal?: AgentMultimodalConfig;
 }
 

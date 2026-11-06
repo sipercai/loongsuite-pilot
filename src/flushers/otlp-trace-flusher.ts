@@ -1068,9 +1068,11 @@ export class OtlpTraceFlusher extends BaseFlusher {
       if (spans.length === 0) return;
       applyQoderWorkStepTiming(records, spans);
       this.enrichToolSkillAttributes(records, spans);
+      if (agentType === 'openclaw' || agentType === 'codex') {
+        this.enrichToolResultAttributes(records, spans);
+      }
       if (agentType === 'openclaw') {
         this.enrichOpenClawIdentityAttributes(openClawIdentity, spans);
-        this.enrichOpenClawToolAttributes(records, spans);
         this.enrichOpenClawLlmAttributes(records, spans);
       }
       if (agentType === 'grok-build') {
@@ -1462,7 +1464,7 @@ export class OtlpTraceFlusher extends BaseFlusher {
     }
   }
 
-  private enrichOpenClawToolAttributes(
+  private enrichToolResultAttributes(
     records: AgentActivityEntry[],
     spans: ReadableSpan[],
   ): void {
@@ -1508,7 +1510,7 @@ export class OtlpTraceFlusher extends BaseFlusher {
       if (extension.errorType || resultStatus === 'failure' || resultStatus === 'error') {
         Object.assign(span.status, {
           code: SpanStatusCode.ERROR,
-          message: extension.errorMessage || 'OpenClaw tool call failed',
+          message: extension.errorMessage || 'Tool call failed',
         });
       }
     }

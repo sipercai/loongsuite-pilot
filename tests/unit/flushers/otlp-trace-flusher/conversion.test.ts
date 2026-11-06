@@ -414,7 +414,7 @@ describe('OtlpTraceFlusher - conversion', () => {
       status: { code: 0 },
     };
 
-    (flusher as any).enrichOpenClawToolAttributes(
+    (flusher as any).enrichToolResultAttributes(
       records,
       [failedTool, successfulTool],
     );

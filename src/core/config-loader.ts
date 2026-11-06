@@ -187,6 +187,7 @@ export interface ConfigFile {
   agents?: Record<string, {
     enabled?: boolean;
     captureMessageContent?: boolean | string;
+    requireTurnSpanContext?: boolean;
     multimodal?: {
       uploadMode?: string;
       allowedRootPaths?: string[];
@@ -520,6 +521,8 @@ function buildAgentsConfig(file: ConfigFile | null): AgentsConfig {
     result[agentType] = {
       enabled: policy.enabled,
       captureMessageContent,
+      ...(agentType === 'codex' && policy.requireTurnSpanContext === true
+        ? { requireTurnSpanContext: true } : {}),
       ...(multimodal ? { multimodal } : {}),
     };
   }

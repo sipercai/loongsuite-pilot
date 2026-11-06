@@ -273,7 +273,8 @@ function buildToolEntries(
     'gen_ai.step.id': stepId,
     'gen_ai.tool.name': tool.name,
     'gen_ai.tool.call.id': tool.callId,
-    'tool.result.status': completed ? 'success' : 'cancelled',
+    'tool.result.status': completed ? (tool.errorType ? 'failure' : 'success') : 'cancelled',
+    ...(tool.errorType ? { 'error.type': tool.errorType } : {}),
   };
   if (completed && tool.output !== undefined) result['gen_ai.tool.call.result'] = tool.output;
   const duration = completed ? tool.completedAtMs! - tool.startedAtMs : undefined;
