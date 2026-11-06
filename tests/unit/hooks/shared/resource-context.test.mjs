@@ -94,6 +94,12 @@ describe('hook resource context helper', () => {
 });
 
 describe('parseSpanAttributesFromEnv', () => {
+  test('retains the existing legacy key syntax and field count', () => {
+    const pairs = Array.from({ length: 40 }, (_, index) => [`custom.${index}`, `value-${index}`]);
+    pairs.push(['自定义.字段', 'legacy']);
+    expect(parseSpanAttributesFromEnv({ LOONGSUITE_PILOT_SPAN_ATTRIBUTES: pairs.map(([key, value]) => `${key}=${value}`).join(',') }))
+      .toEqual(Object.fromEntries(pairs));
+  });
   test('accepts structured invocation attributes without splitting commas, equals signs or Unicode', () => {
     expect(parseSpanAttributesFromEnv({ LOONGSUITE_PILOT_SPAN_ATTRIBUTES: JSON.stringify({
       'agentcore.task_name': '任务, 名称=一\n二', 'agentcore.run_id': 'run-1',

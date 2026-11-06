@@ -98,13 +98,14 @@ export function parseSpanAttributesFromEnv(env = process.env, opts = {}) {
 
   const raw = env[envName];
   if (typeof raw !== 'string' || raw.length === 0) return out;
-  if (Buffer.byteLength(raw, 'utf8') > 64 * 1_024) return out;
+  const structured = raw.trimStart().startsWith('{');
+  if (structured && Buffer.byteLength(raw, 'utf8') > 64 * 1_024) return out;
   let pairs;
-  if (raw.trimStart().startsWith('{')) {
+  if (structured) {
     try {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-      pairs = Object.entries(parsed);
+      pairs = Object.entries(parsed).slice(0, 32);
     } catch { return out; }
   } else {
     pairs = raw.split(',').flatMap(pair => {
@@ -112,7 +113,7 @@ export function parseSpanAttributesFromEnv(env = process.env, opts = {}) {
       return idx > 0 ? [[pair.slice(0, idx), pair.slice(idx + 1)]] : [];
     });
   }
-  for (const [rawKey, rawValue] of pairs.slice(0, 32)) {
+  for (const [rawKey, rawValue] of pairs) {
     if (typeof rawValue !== 'string') continue;
     const key = rawKey.trim();
     const value = rawValue.trim();
@@ -130,7 +131,7 @@ export function parseSpanAttributesFromEnv(env = process.env, opts = {}) {
       continue;
     }
 
-    if (!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(key) || isReservedSpanAttrKey(key)) {
+    if ((structured && !/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(key)) || isReservedSpanAttrKey(key)) {
       warnSkip(agentId, key, 'reserved prefix');
       continue;
     }
